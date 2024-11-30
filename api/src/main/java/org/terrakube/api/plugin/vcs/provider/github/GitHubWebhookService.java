@@ -19,6 +19,7 @@ import org.terrakube.api.rs.job.JobStatus;
 import org.terrakube.api.rs.job.JobVia;
 import org.terrakube.api.rs.vcs.Vcs;
 import org.terrakube.api.rs.webhook.Webhook;
+import org.terrakube.api.rs.webhook.WebhookEvent;
 import org.terrakube.api.rs.workspace.Workspace;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -28,6 +29,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.stream.Collectors;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -84,7 +86,7 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 });
                 result.setFileChanges(fileChanges);
 
-            // Handle pull request event (opened, synchronize, reopened)
+                // Handle pull request event (opened, synchronize, reopened)
             } else if ("pull_request".equals(event)) {
                 // Extract repository owner and name from the payload
                 String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
@@ -122,10 +124,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
         List<String> fileChanges = new ArrayList<>();
         try {
             // Fetch GitHub API token from TokenService
-            String token = tokenService.getAccessToken(new String[]{repoOwner, repoName}, vcs);
+            String token = tokenService.getAccessToken(new String[] { repoOwner, repoName }, vcs);
 
             // Construct API URL
-            String url = String.format("https://api.github.com/repos/%s/%s/pulls/%d/files", repoOwner, repoName, prNumber);
+            String url = String.format("https://api.github.com/repos/%s/%s/pulls/%d/files", repoOwner, repoName,
+                    prNumber);
             HttpURLConnection connection = null;
             BufferedReader reader = null;
 
@@ -154,8 +157,10 @@ public class GitHubWebhookService extends WebhookServiceBase {
                     log.error("Failed to fetch PR files: HTTP error code {}", connection.getResponseCode());
                 }
             } finally {
-                if (reader != null) reader.close();
-                if (connection != null) connection.disconnect();
+                if (reader != null)
+                    reader.close();
+                if (connection != null)
+                    connection.disconnect();
             }
         } catch (Exception e) {
             log.error("Error fetching PR file changes", e);
@@ -221,7 +226,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
             log.error(String.format("Failed to send job status to Github, message %s", response.getBody()));
         }
 
-        // Optional: Check if the commit is part of a PR and send status to the PR as well
+        // Optional: Check if the commit is part of a PR and send status to the PR as
+        // well
         try {
             List<Integer> prNumbers = getPullRequestNumbersForCommit(workspace, job.getCommitId());
             for (Integer prNumber : prNumbers) {
@@ -240,7 +246,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 if (prResponse.getStatusCode().value() == 201) {
                     log.info("Job status sent successfully to PR #{} on GitHub", prNumber);
                 } else {
-                    log.error(String.format("Failed to send job status to PR #%, message %s", prNumber, prResponse.getBody()));
+                    log.error(String.format("Failed to send job status to PR #%, message %s", prNumber,
+                            prResponse.getBody()));
                 }
             }
         } catch (Exception e) {
@@ -267,7 +274,8 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 log.error("Failed to parse PR data for commit {}: {}", commitId, e.getMessage());
             }
         } else {
-            log.error("Failed to fetch PRs for commit {}: {}", commitId, response != null ? response.getBody() : "No response");
+            log.error("Failed to fetch PRs for commit {}: {}", commitId,
+                    response != null ? response.getBody() : "No response");
         }
 
         return prNumbers;
@@ -280,9 +288,11 @@ public class GitHubWebhookService extends WebhookServiceBase {
         String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
 
-        // Create the body, in this version we only support push event but in future we
-        // can make this more dynamic
-        String body = "{\"name\":\"web\",\"active\":true,\"events\":[\""+ webhook.getEvent().toString().toLowerCase() + "\"],\"config\":{\"url\":\"" + webhookUrl
+        // Only Push and Pull Request events are supported for now
+        String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct().map(s -> "\"" + s + "\"")
+                .collect(Collectors.joining(","));
+        String body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
+                + webhookUrl
                 + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
 

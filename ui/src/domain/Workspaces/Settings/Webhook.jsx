@@ -2,11 +2,33 @@ import {
     Table,
     Space,
     Popconfirm,
+    Spin,
+    Form,
 } from "antd";
+import { useEffect, useState } from "react";
+import axiosInstance from "../../../config/axiosConfig";
 
-export const WorkspaceWebhook = ({workspace, manageWorkspace}) => {
+export const WorkspaceWebhook = ({ workspace, manageWorkspace }) => {
+    const [waiting, setWaiting] = useState(true);
+    const organizationId = workspace.relationships.organization.data.id;
+    const webhookId = workspace.relationships.webhook.data.id;
+    const workspaceId = workspace.id;
+
+    useEffect(() => {
+        setWaiting(true);
+        loadWebhook();
+        setWaiting(false);
+    });
+    const loadWebhook = () => {
+        axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events`).then((response) => {
+            console.log(response);
+            if (response.status === 200) {
+                console.log(response);
+            }
+        });
+    };
     const onDelete = (id) => {
-    }
+    };
     const columns = [
         {
             title: "Event",
@@ -53,8 +75,8 @@ export const WorkspaceWebhook = ({workspace, manageWorkspace}) => {
                 </Space>
             ),
         }
-    ] 
-    
+    ]
+
     const data = [
         {
             key: '1',
@@ -78,15 +100,22 @@ export const WorkspaceWebhook = ({workspace, manageWorkspace}) => {
             template: 'Terraform',
         },
     ];
-    
+
     return (
         <div>
             <h1>Webhook</h1>
             <div className="App-Text">
                 Webhooks allow you to trigger a workspace run when a specific event occurs in the repository.
             </div>
-            {/* <Table columns={columns} dataSource={workspace.webhooks} /> */}
-            <Table columns={columns} dataSource={data} />
+            <Spin spinning={waiting}>
+                <Form>
+                    <Form.Item name="id" label="ID">
+                    </Form.Item>
+                    <Form.Item name="remote_hook_id" label="Hook ID">
+                    </Form.Item>
+                    <Table columns={columns} dataSource={data} />
+                </Form>
+            </Spin>
         </div>
     );
 }

@@ -140,12 +140,7 @@ public class WebhookService {
             throw new IllegalArgumentException("No VCS defined for workspace");
         }
 
-        if (webhook.getEvent() == null || webhook.getEvent().toString().isEmpty())
-            webhook.setEvent("PUSH");
-
         String webhookRemoteId = "";
-        if (webhook.getTemplateId() == null)
-            webhook.setTemplateId(workspace.getDefaultTemplate());
 
         Vcs vcs = workspace.getVcs();
         switch (vcs.getVcsType()) {
@@ -235,6 +230,10 @@ public class WebhookService {
         }
         log.info("Changed files {} doesn't match any of the trigger path pattern {}", files, triggeredPath);
         return false;
+    }
+    
+    private void findTemplate() {
+
     }
 
     private void sendCommitStatus(Job job) {
