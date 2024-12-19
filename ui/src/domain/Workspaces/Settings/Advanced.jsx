@@ -79,11 +79,11 @@ export const WorkspaceAdvanced = ({ workspace, manageWorkspace }) => {
     return (
         <div>
             <h1>Advanced Settings</h1>
-            <div className="App-Text">
+            <p>
                 Deleting thill permanently delete the
                 information. Please be certain that you understand this.
                 This action cannot be undone.
-            </div>
+            </p>
             <Popconfirm
                 onConfirm={() => {
                     onDelete(workspace);

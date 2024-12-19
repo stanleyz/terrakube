@@ -1,4 +1,6 @@
-import { InfoCircleOutlined } from "@ant-design/icons";
+import { 
+  InfoCircleOutlined,
+} from "@ant-design/icons";
 import {
   Button,
   Form,
@@ -22,6 +24,7 @@ import {
 
 export const WorkspaceGeneral = ({
   workspaceData,
+  orgTemplates,
   manageWorkspace,
 }) => {
   const organizationId = workspaceData.relationships.organization.data.id;
@@ -30,7 +33,6 @@ export const WorkspaceGeneral = ({
   const Option = Select;
   const [selectedIac, setSelectedIac] = useState("");
   const [terraformVersions, setTerraformVersions] = useState([]);
-  const [orgTemplates, setOrgTemplates] = useState([]);
   const [agentList, setAgentList] = useState([]);
   const [sshKeys, setSSHKeys] = useState([]);
   const [waiting, setWaiting] = useState(false);
@@ -54,14 +56,6 @@ export const WorkspaceGeneral = ({
       setTerraformVersions(tfVersions.sort(compareVersions).reverse());
     });
   };
-  const loadOrgTemplates = () => {
-    axiosInstance
-      .get(`organization/${organizationId}/template`)
-      .then((response) => {
-        console.log(response.data.data);
-        setOrgTemplates(response.data.data);
-      });
-  };
   const loadSSHKeys = () => {
     axiosInstance.get(`organization/${organizationId}/ssh`).then((response) => {
       console.log(response.data.data);
@@ -80,7 +74,6 @@ export const WorkspaceGeneral = ({
   useEffect(() => {
     setWaiting(true);
     loadVersions(workspaceData.attributes?.iacType);
-    loadOrgTemplates();
     loadSSHKeys();
     loadAgentlist();
     setWaiting(false);
@@ -179,7 +172,7 @@ export const WorkspaceGeneral = ({
             description: workspaceData.attributes?.description,
             folder: workspaceData.attributes?.folder,
             locked: workspaceData.attributes?.locked,
-            lockDescription: workspace.data.attributes.lockDescription,
+            lockDescription: workspaceData.attributes.lockDescription,
             moduleSshKey: workspaceData.attributes?.moduleSshKey,
             executionMode:
               workspaceData.attributes?.executionMode,

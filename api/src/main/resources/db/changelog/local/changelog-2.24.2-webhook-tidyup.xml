@@ -8,6 +8,7 @@
             <column name="branch" />
             <column name="path" />
             <column name="template_id" />
+            <column name="event" />
         </dropColumn>
     </changeSet>
 </databaseChangeLog>

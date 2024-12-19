@@ -65,6 +65,7 @@ import {
   // loadVersions,
   getIaCIconById,
   getIaCNameById,
+  renderVCSLogo,
 } from "./Workspaces";
 import "./Workspaces.css";
 const { Option } = Select;
@@ -123,7 +124,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }) => {
   const [agent, setAgent] = useState("...");
   // const [sshKeys, setSSHKeys] = useState([]);
   // const [agentList, setAgentList] = useState([]);
-  // const [orgTemplates, setOrgTemplates] = useState([]);
+  const [orgTemplates, setOrgTemplates] = useState([]);
   const [vcsProvider, setVCSProvider] = useState("");
   const [resources, setResources] = useState([]);
   const [outputs, setOutputs] = useState([]);
@@ -232,6 +233,14 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }) => {
   //       setAgentList(response.data.data);
   //     });
   // };
+  const loadOrgTemplates = () => {
+    axiosInstance
+      .get(`organization/${organizationId}/template`)
+      .then((response) => {
+        console.log(response.data.data);
+        setOrgTemplates(response.data.data);
+      });
+  };
 
   const showDrawer = (record) => {
     setOpen(true);
@@ -319,6 +328,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }) => {
     setLoading(false);
     // loadSSHKeys();
     // loadAgentlist();
+    loadOrgTemplates();
     const interval = setInterval(() => {
       loadWorkspace(false, false, false);
       loadPermissionSet();
@@ -581,28 +591,28 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }) => {
   //     });
   // };
 
-  const renderVCSLogo = (vcs) => {
-    switch (vcs) {
-      case "GITLAB":
-        return <GitlabOutlined style={{ fontSize: "18px" }} />;
-      case "BITBUCKET":
-        return (
-          <IconContext.Provider value={{ size: "18px" }}>
-            <SiBitbucket />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      case "AZURE_DEVOPS":
-        return (
-          <IconContext.Provider value={{ size: "18px" }}>
-            <SiAzuredevops />
-            &nbsp;
-          </IconContext.Provider>
-        );
-      default:
-        return <GithubOutlined style={{ fontSize: "18px" }} />;
-    }
-  };
+  // const renderVCSLogo = (vcs) => {
+  //   switch (vcs) {
+  //     case "GITLAB":
+  //       return <GitlabOutlined style={{ fontSize: "18px" }} />;
+  //     case "BITBUCKET":
+  //       return (
+  //         <IconContext.Provider value={{ size: "18px" }}>
+  //           <SiBitbucket />
+  //           &nbsp;
+  //         </IconContext.Provider>
+  //       );
+  //     case "AZURE_DEVOPS":
+  //       return (
+  //         <IconContext.Provider value={{ size: "18px" }}>
+  //           <SiAzuredevops />
+  //           &nbsp;
+  //         </IconContext.Provider>
+  //       );
+  //     default:
+  //       return <GithubOutlined style={{ fontSize: "18px" }} />;
+  //   }
+  // };
 
   // const onDelete = (workspace) => {
   //   let randomLetters = generateRandomString(4);
@@ -1177,6 +1187,7 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }) => {
                         key: "61",
                         children: <WorkspaceGeneral 
                           workspaceData={workspace.data}
+                          orgTemplates={orgTemplates}
                           manageWorkspace={manageWorkspace}
                         />
                       },
@@ -1184,7 +1195,9 @@ export const WorkspaceDetails = ({ setOrganizationName, selectedTab }) => {
                         label: "Webhook",
                         key: "62",
                         children: <WorkspaceWebhook
-                          workspace={workspace}
+                          workspace={workspace.data}
+                          vcsProvider={vcsProvider}
+                          orgTemplates={orgTemplates}
                           manageWorkspace={manageWorkspace} />
                       },
                       {
@@ -1556,7 +1569,7 @@ function setupWorkspaceIncludes(
   setCollectionVariables,
   setCollectionEnvVariables,
   setGlobalVariables,
-  setGlobalEnvVariable
+  setGlobalEnvVariables
 ) {
   let variables = [];
   let jobs = [];

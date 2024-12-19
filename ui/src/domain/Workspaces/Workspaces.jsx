@@ -1,6 +1,7 @@
+import { GithubOutlined, GitlabOutlined } from "@ant-design/icons";
 import { message } from "antd";
 import { IconContext } from "react-icons";
-import { SiTerraform } from "react-icons/si";
+import { SiAzuredevops, SiBitbucket, SiTerraform } from "react-icons/si";
 import axiosInstance from "../../config/axiosConfig";
 
 export const genericHeader = {
@@ -25,6 +26,29 @@ export function compareVersions(a, b) {
       ((splitA[i] === splitB[i]) && isNaN(splitA[i + 1]))) {
       return -1;
     }
+  }
+}
+
+export const renderVCSLogo = (vcs) => {
+  switch (vcs) {
+    case "GITLAB":
+      return <GitlabOutlined style={{ fontSize: "18px" }} />;
+    case "BITBUCKET":
+      return (
+        <IconContext.Provider value={{ size: "18px" }}>
+          <SiBitbucket />
+          &nbsp;
+        </IconContext.Provider>
+      );
+    case "AZURE_DEVOPS":
+      return (
+        <IconContext.Provider value={{ size: "18px" }}>
+          <SiAzuredevops />
+          &nbsp;
+        </IconContext.Provider>
+      );
+    default:
+      return <GithubOutlined style={{ fontSize: "18px" }} />;
   }
 }
 
