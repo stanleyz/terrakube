@@ -48,8 +48,7 @@ public class WebhookService {
         String result = "";
         Webhook webhook = webhookRepository.getReferenceById(UUID.fromString(webhookId));
         if (webhook == null) {
-            log.error("Webhook {} not found", webhookId);
-            return result;
+            throw new IllegalArgumentException("Webhook not found");
         }
         Workspace workspace = webhook.getWorkspace();
         Vcs vcs = workspace.getVcs();
@@ -82,7 +81,8 @@ public class WebhookService {
 
         log.info("webhook result {}", webhookResult);
 
-        if (!webhookResult.isValid())
+        if (!webhookResult.isValid()
+                || webhookResult.getEvent().equals(String.valueOf(WebhookEventType.PING).toLowerCase()))
             return result;
 
         try {
@@ -114,7 +114,7 @@ public class WebhookService {
     }
 
     @Transactional
-    public void createWorkspaceWebhook(Webhook webhook) {
+    public void createOrUpdateWorkspaceWebhook(Webhook webhook) {
         Workspace workspace = webhook.getWorkspace();
         if (workspace.getVcs() == null) {
             log.warn("There is no VCS defined for workspace {}, skipping webhook creation", workspace.getName());
@@ -126,7 +126,7 @@ public class WebhookService {
         Vcs vcs = workspace.getVcs();
         switch (vcs.getVcsType()) {
             case GITHUB:
-                webhookRemoteId = gitHubWebhookService.createWebhook(workspace, webhook);
+                webhookRemoteId = gitHubWebhookService.createOrUpdateWebhook(workspace, webhook);
                 break;
             case GITLAB:
                 webhookRemoteId = gitLabWebhookService.createWebhook(workspace, webhook.getId().toString());
@@ -140,7 +140,7 @@ public class WebhookService {
 
         if (webhookRemoteId.isEmpty()) {
             log.error("Error creating the webhook");
-            throw new IllegalArgumentException("Error creating the webhook");
+            throw new IllegalArgumentException("Error creating/updating the webhook");
         }
 
         webhook.setRemoteHookId(webhookRemoteId);
@@ -202,14 +202,14 @@ public class WebhookService {
 
     private String findTemplateId(WebhookResult result, Webhook webhook) {
         return webhookEventRepository
-                .findByWebhookAndEventOrderByPriorityAsc(webhook, WebhookEventType.valueOf(result.getEvent()))
+                .findByWebhookAndEventOrderByPriorityAsc(webhook,
+                        WebhookEventType.valueOf(result.getEvent().toUpperCase()))
                 .stream()
                 .filter(webhookEvent -> checkBranch(result.getBranch(), webhookEvent)
                         && checkFileChanges(result.getFileChanges(), webhookEvent))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No valid template found for the configured webhook event " + result.getEvent()
-                                + ", nor default template configured for workspace " + webhook.getWorkspace().getName()))
+                        "No valid template found for the configured webhook event " + result.getEvent()))
                 .getTemplateId();
     }
 

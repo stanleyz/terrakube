@@ -1,19 +1,27 @@
 package org.terrakube.api.plugin.vcs.provider.github;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.terrakube.api.plugin.vcs.TokenService;
 import org.terrakube.api.plugin.vcs.WebhookResult;
 import org.terrakube.api.plugin.vcs.WebhookServiceBase;
-import org.terrakube.api.repository.WorkspaceRepository;
 import org.terrakube.api.rs.job.Job;
 import org.terrakube.api.rs.job.JobStatus;
 import org.terrakube.api.rs.job.JobVia;
@@ -27,13 +35,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.ArrayList;
-import java.util.stream.Collectors;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 @Service
 @Slf4j
@@ -60,23 +61,36 @@ public class GitHubWebhookService extends WebhookServiceBase {
     private WebhookResult handleEvent(String jsonPayload, WebhookResult result, Map<String, String> headers, Vcs vcs) {
         String event = headers.get("x-github-event");
         result.setEvent(event);
+        if (event.equals("ping")) {
+            return result;
+        }
 
+        JsonNode rootNode = null;
         try {
-            JsonNode rootNode = objectMapper.readTree(jsonPayload);
+            rootNode = objectMapper.readTree(jsonPayload);
+        } catch (Exception e) {
+            log.error("Error parsing JSON response", e);
+        }
 
-            // Handle push event
-            if ("push".equals(event)) {
-                // Extract branch from the ref
-                String[] ref = rootNode.path("ref").asText().split("/");
-                String[] extractedBranch = Arrays.copyOfRange(ref, 2, ref.length);
-                result.setBranch(String.join("/", extractedBranch));
+        if (rootNode == null) {
+            log.error("Error fetching root node from JSON payload");
+            return result;
+        }
 
-                // Extract the user who triggered the webhook
-                String pusher = rootNode.path("pusher").path("email").asText();
-                result.setCreatedBy(pusher);
+        // Handle push event
+        if ("push".equals(event)) {
+            // Extract branch from the ref
+            String[] ref = rootNode.path("ref").asText().split("/");
+            String[] extractedBranch = Arrays.copyOfRange(ref, 2, ref.length);
+            result.setBranch(String.join("/", extractedBranch));
 
-                // Extract files changed in the push
-                List<String> fileChanges = new ArrayList<>();
+            // Extract the user who triggered the webhook
+            String pusher = rootNode.path("pusher").path("email").asText();
+            result.setCreatedBy(pusher);
+
+            // Extract files changed in the push
+            List<String> fileChanges = new ArrayList<>();
+            try {
                 GitHubWebhookModel gitHubWebhookModel = objectMapper.readValue(jsonPayload, GitHubWebhookModel.class);
                 result.setCommit(gitHubWebhookModel.getHead_commit().getId());
                 gitHubWebhookModel.getCommits().forEach(commit -> {
@@ -86,86 +100,37 @@ public class GitHubWebhookService extends WebhookServiceBase {
                 });
                 result.setFileChanges(fileChanges);
 
-                // Handle pull request event (opened, synchronize, reopened)
-            } else if ("pull_request".equals(event)) {
-                // Extract repository owner and name from the payload
-                String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
-                String repoName = rootNode.path("repository").path("name").asText();
-                String action = rootNode.path("action").asText();
-                if ("opened".equals(action) || "synchronize".equals(action) || "reopened".equals(action)) {
-                    int prNumber = rootNode.path("number").asInt();
-                    result.setPrNumber(prNumber);
-
-                    String prCommitId = rootNode.path("pull_request").path("head").path("sha").asText();
-                    result.setCommit(prCommitId);
-
-                    String prBranch = rootNode.path("pull_request").path("head").path("ref").asText();
-                    result.setBranch(prBranch);
-
-                    // Set createdBy to the user who created the PR
-                    String prUser = rootNode.path("pull_request").path("user").path("login").asText();
-                    result.setCreatedBy(prUser);
-
-                    // Fetch file changes for the PR
-                    List<String> prFileChanges = getPrFileChanges(prNumber, repoOwner, repoName, vcs);
-                    result.setFileChanges(prFileChanges);
-                }
+            } catch (Exception e) {
+                log.error("Error parsing JSON response", e);
             }
-        } catch (Exception e) {
-            log.error("Error parsing JSON response", e);
-            result.setBranch("");
+            // Handle pull request event (opened, synchronize, reopened)
+        } else if ("pull_request".equals(event)) {
+            // Extract repository owner and name from the payload
+            String repoOwner = rootNode.path("repository").path("owner").path("login").asText();
+            String repoName = rootNode.path("repository").path("name").asText();
+            String action = rootNode.path("action").asText();
+            if ("opened".equals(action) || "synchronize".equals(action) || "reopened".equals(action)) {
+                int prNumber = rootNode.path("number").asInt();
+                result.setPrNumber(prNumber);
+
+                String prCommitId = rootNode.path("pull_request").path("head").path("sha").asText();
+                result.setCommit(prCommitId);
+
+                String prBranch = rootNode.path("pull_request").path("head").path("ref").asText();
+                result.setBranch(prBranch);
+
+                // Set createdBy to the user who created the PR
+                String prUser = rootNode.path("pull_request").path("user").path("login").asText();
+                result.setCreatedBy(prUser);
+                
+                String prFilesUrl = rootNode.path("pull_request").path("url").asText() + "/files";
+                // Fetch file changes for the PR
+                List<String> prFileChanges = getPrFileChanges(vcs, new String[]{repoOwner, repoName}, prFilesUrl);
+                result.setFileChanges(prFileChanges);
+            }
         }
 
         return result;
-    }
-
-    // Helper method to fetch files changed in a PR using GitHub API
-    private List<String> getPrFileChanges(int prNumber, String repoOwner, String repoName, Vcs vcs) {
-        List<String> fileChanges = new ArrayList<>();
-        try {
-            // Fetch GitHub API token from TokenService
-            String token = tokenService.getAccessToken(new String[] { repoOwner, repoName }, vcs);
-
-            // Construct API URL
-            String url = String.format("https://api.github.com/repos/%s/%s/pulls/%d/files", repoOwner, repoName,
-                    prNumber);
-            HttpURLConnection connection = null;
-            BufferedReader reader = null;
-
-            try {
-                URL apiUrl = new URL(url);
-                connection = (HttpURLConnection) apiUrl.openConnection();
-                connection.setRequestMethod("GET");
-                connection.setRequestProperty("Authorization", "Bearer " + token);
-                connection.setRequestProperty("Accept", "application/vnd.github.v3+json");
-
-                if (connection.getResponseCode() == 200) {
-                    reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                    StringBuilder response = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        response.append(line);
-                    }
-
-                    // Parse response to extract file names
-                    JsonNode responseJson = objectMapper.readTree(response.toString());
-                    for (JsonNode fileNode : responseJson) {
-                        String filename = fileNode.path("filename").asText();
-                        fileChanges.add(filename);
-                    }
-                } else {
-                    log.error("Failed to fetch PR files: HTTP error code {}", connection.getResponseCode());
-                }
-            } finally {
-                if (reader != null)
-                    reader.close();
-                if (connection != null)
-                    connection.disconnect();
-            }
-        } catch (Exception e) {
-            log.error("Error fetching PR file changes", e);
-        }
-        return fileChanges;
     }
 
     public void sendCommitStatus(Job job, JobStatus jobStatus) {
@@ -281,34 +246,66 @@ public class GitHubWebhookService extends WebhookServiceBase {
         return prNumbers;
     }
 
-    public String createWebhook(Workspace workspace, Webhook webhook) {
-        String id = "";
+    private List<String> getPrFileChanges(Vcs vcs, String[] ownerAndRepo, String apiUrl) {
+        List<String> changedFiles = new ArrayList<>();
+
+        ResponseEntity<String> response = callGitHubApi(vcs, ownerAndRepo, "", apiUrl, HttpMethod.GET);
+        if(response == null || response.getStatusCode().value() != 200) {
+            log.error("Failed to fetch PR file changes from GitHub, response: {}", response != null ? response.getBody() : "No response");
+            return changedFiles;
+        }
+        
+        try {
+            JsonNode rootNode = objectMapper.readTree(response.getBody());
+            for (JsonNode file : rootNode) {
+                changedFiles.add(file.path("filename").asText());
+            }
+        } catch (Exception e) {
+            log.error("Error parsing JSON response", e);
+        }
+        return changedFiles;
+    }
+
+    public String createOrUpdateWebhook(Workspace workspace, Webhook webhook) {
+        String id = webhook.getRemoteHookId();
         String secret = Base64.getEncoder()
                 .encodeToString(workspace.getId().toString().getBytes(StandardCharsets.UTF_8));
         String webhookUrl = String.format("https://%s/webhook/v1/%s", hostname, webhook.getId().toString());
         String[] ownerAndRepo = extractOwnerAndRepo(workspace.getSource());
 
         // Only Push and Pull Request events are supported for now
-        String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct().map(s -> "\"" + s + "\"")
+        String events = webhook.getEvents().stream().map(WebhookEvent::getEvent).distinct()
+                .map(s -> "\"" + String.valueOf(s).toLowerCase() + "\"")
                 .collect(Collectors.joining(","));
-        String body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
-                + webhookUrl
-                + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+        String body = "";
         String apiUrl = workspace.getVcs().getApiUrl() + "/repos/" + String.join("/", ownerAndRepo) + "/hooks";
+        HttpMethod httpMethod = HttpMethod.POST;
+
+        if (id != null) {
+            body = "{\"active\":true, \"events\":[" + events + "]}";
+            apiUrl = apiUrl + "/" + webhook.getRemoteHookId();
+            httpMethod = HttpMethod.PATCH;
+        } else {
+            body = "{\"name\":\"web\",\"active\":true,\"events\":[" + events + "],\"config\":{\"url\":\""
+                    + webhookUrl
+                    + "\",\"secret\":\"" + secret + "\",\"content_type\":\"json\",\"insecure_ssl\":\"1\"}}";
+        }
 
         ResponseEntity<String> response = callGitHubApi(workspace.getVcs(), ownerAndRepo, body, apiUrl,
-                HttpMethod.POST);
+                httpMethod);
         // Extract the id from the response
-        if (response != null && response.getStatusCode().value() == 201) {
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                JsonNode rootNode = objectMapper.readTree(response.getBody());
-                id = rootNode.path("id").asText();
-            } catch (Exception e) {
-                log.error("Error parsing JSON response", e);
+        if (response != null && (response.getStatusCode().value() == 201 || response.getStatusCode().value() == 200)) {
+            if (id == null) {
+                ObjectMapper objectMapper = new ObjectMapper();
+                try {
+                    JsonNode rootNode = objectMapper.readTree(response.getBody());
+                    id = rootNode.path("id").asText();
+                } catch (Exception e) {
+                    log.error("Error parsing JSON response", e);
+                }
             }
 
-            log.info("GitHub Hook created successfully for workspace {}/{} with id {}",
+            log.info("GitHub Hook created/updated successfully for workspace {}/{} with id {}",
                     workspace.getOrganization().getName(), workspace.getName(), id);
         }
 

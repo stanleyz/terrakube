@@ -60,8 +60,8 @@ export const WorkspaceWebhook = ({
                 console.log(response);
             });
             axiosInstance.get(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events`).then((response) => {
-                var i = recordIndex + 1;
-                const events = response.data.data.map((event) => {
+                var i = 1;
+                const events = response.data.data.sort((a, b) => b.attributes.priority - a.attributes.priority).map((event) => {
                     return {
                         key: i++,
                         id: event.id,
@@ -74,7 +74,10 @@ export const WorkspaceWebhook = ({
                     };
                 });
                 setRecordIndex(events.length + 1);
-                setWebhookEvents(events.concat(webhookEvents));
+                setWebhookEvents(events.concat({
+                    key: i,
+                    id: uuid(),
+                }));
             });
         }
         catch (error) {
@@ -92,6 +95,8 @@ export const WorkspaceWebhook = ({
                 id: uuid(),
             }]);
             setRecordIndex(index);
+        } else {
+            setWebhookEvents([...webhookEvents]);
         }
     };
     const handleWebhookClick = () => {
@@ -99,53 +104,125 @@ export const WorkspaceWebhook = ({
     }
     const onDelete = (record) => {
         const newWebhookEvents = webhookEvents.filter((item) => item.key !== record.key);
+        if (record.created) {
+            axiosInstance.delete(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events/${record.id}`).then((response) => {
+                console.log(response);
+                if (response.status != 204) {
+                    message.error("Failed to delete webhook event");
+                    return;
+                }
+                message.success("Webhook event deleted successfully");
+                setRecordIndex(recordIndex - 1);
+            });
+        }
+        if (newWebhookEvents.length == 0) {
+            newWebhookEvents.push({
+                key: 1,
+                id: uuid(),
+            });
+        }
         setWebhookEvents(newWebhookEvents);
     };
     const onFinish = (values) => {
         setWaiting(true);
+        if (!webhookEnabled) {
+            axiosInstance.delete(`organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}`).then((response) => {
+                console.log(response);
+                if (response.status != 204) {
+                    message.error("Failed to disable webhook");
+                    setWaiting(false);
+                    return;
+                }
+            });
+            message.success("Webhook disabled successfully");
+            setWebhookEvents([]);
+            setWaiting(false);
+            return;
+        }
+        if (webhookEnabled && webhookEvents.length == 1) {
+            message.error("At least one event configuration is required");
+            setWaiting(false);
+            return;
+        }
+        // Verify required fields
+        var inputError = false
+        webhookEvents.filter((_, index) => index < recordIndex - 1).forEach((event) => {
+            event.eventStatus = event.event ? "success" : "error";
+            event.branchStatus = event.branch ? "success" : "error";
+            event.fileStatus = event.file ? "success" : "error";
+            event.templateStatus = event.template ? "success" : "error";
+
+            if (!event.event || !event.branch || !event.file || !event.template) {
+                inputError = true;
+            }
+        });
+        if (inputError) {
+            setWaiting(false);
+            message.error("Event, Branch, File and Template are required fields");
+            setWebhookEvents([...webhookEvents]);
+            return;
+        }
+        const baseRequestURL = `/organization/${organizationId}/workspace/${workspaceId}/webhook`;
+        const newWebhookId = webhookId ? webhookId : uuid();
         const body = {
             "atomic:operations": [
-            {
-                op: webhookId ? "update" : "add",
-                href: `/organization/${organizationId}/workspace/${workspaceId}/webhook`,
-                data: {
-                    type: "webhook",
-                    id: webhookId ? webhookId : uuid(),
-                },
-                relationships: {
-                    events: {
-                        data: webhookEvents.filter((item) => item.key == 1).map(function (event, index) {
-                            return {
-                                type: "webhook_event",
-                                id: event.id,
-                            };
-                        }),
-                    },
-                },
-            }, 
-            ...webhookEvents.filter((item) => item.key == 1).map(function (event, index) {
-                return {
-                    op: event.created ? "update" : "add",
-                    href: `/organization/${organizationId}/workspace/${workspaceId}/webhook/${webhookId}/events`,
+                {
+                    op: webhookId ? "update" : "add",
+                    href: baseRequestURL,
                     data: {
-                        type: "webhook_event",
-                        id: event.id,
-                        attributes: {
-                            priority: event.priority ? event.priority : 1,
-                            event: event.event.toUpperCase(),
-                            branch: event.branch,
-                            path: event.file,
-                            templateId: event.template,
+                        type: "webhook",
+                        id: newWebhookId,
+                    },
+                    relationships: {
+                        events: {
+                            data: webhookEvents.filter((_, index) => index < recordIndex - 1).map(function (event, _) {
+                                return {
+                                    type: "webhook_event",
+                                    id: event.id,
+                                };
+                            }),
                         },
                     },
-                };
-            })]
+                },
+                ...webhookEvents.filter((_, index) => index < recordIndex - 1).map(function (event, _) {
+                    return {
+                        op: event.created ? "update" : "add",
+                        href: event.created ? `${baseRequestURL}/${newWebhookId}/events/${event.id}` : `${baseRequestURL}/${newWebhookId}/events`,
+                        data: {
+                            type: "webhook_event",
+                            id: event.id,
+                            attributes: {
+                                priority: event.priority ? event.priority : 1,
+                                event: event.event.toUpperCase(),
+                                branch: event.branch,
+                                path: event.file,
+                                templateId: event.template,
+                            },
+                        },
+                    };
+                })]
         };
 
         axiosInstance.post("/operations", body, atomicHeader).then((response) => {
             console.log(response);
+            if (response.status != 200) {
+                message.error("Failed to save webhook");
+                setWaiting(false);
+                return;
+            }
+            // Mark all events as created
+            webhookEvents.filter((_, index) => index < recordIndex - 1).forEach((event) => {
+                event.created = true;
+                event.eventStatus = "success";
+                event.branchStatus = "success";
+                event.fileStatus = "success";
+                event.templateStatus = "success";
+            });
+            setWebhookEvents([...webhookEvents]);
+            setWaiting(false);
+            message.success("Webhook saved successfully");
         });
-        setWaiting(false);
+
     };
     const columns = [
         {
@@ -156,7 +233,8 @@ export const WorkspaceWebhook = ({
             render: (text, record, index) => (
                 <Input placeholder="1"
                     name="priority"
-                    value = {record.priority}
+                    value={record.priority}
+                    status={record.status}
                     onChange={(e) => handleEventChange(index, record.key, e.target.name, e.target.value)}></Input>
             ),
         },
@@ -168,7 +246,8 @@ export const WorkspaceWebhook = ({
             render: (text, record, index) => (
                 <Select
                     placeholder="Select an event"
-                    value = {record.event}
+                    value={record.event}
+                    status={record.eventStatus}
                     onChange={(e) => handleEventChange(index, record.key, "event", e)}
                 >
                     <Select.Option value="push">Push</Select.Option>
@@ -184,7 +263,8 @@ export const WorkspaceWebhook = ({
                 <Input
                     placeholder="List of regex to match aginst branch names"
                     name="branch"
-                    value = {record.branch}
+                    status={record.branchStatus}
+                    value={record.branch}
                     onChange={(e) => handleEventChange(index, record.key, e.target.name, e.target.value)}></Input>
             ),
         },
@@ -197,7 +277,8 @@ export const WorkspaceWebhook = ({
                 <Input
                     placeholder="List of regex to match aginst changed files"
                     name="file"
-                    value = {record.file}
+                    value={record.file}
+                    status={record.fileStatus}
                     onChange={(e) => handleEventChange(index, record.key, e.target.name, e.target.value)}></Input>
             ),
         },
@@ -209,7 +290,8 @@ export const WorkspaceWebhook = ({
             render: (text, record, index) => (
                 <Select
                     placeholder="Select a template"
-                    value = {record.template}
+                    value={record.template}
+                    status={record.templateStatus}
                     onChange={(e) => handleEventChange(index, record.key, "template", e)}
                 >
                     {orgTemplates.map(function (template, index) {

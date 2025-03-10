@@ -8,10 +8,18 @@
             <column name="id" type="varchar(36)">
                 <constraints primaryKey="true" nullable="false" />
             </column>
-            <column name="branch" type="varchar(512)" />
-            <column name="path" type="varchar(512)" />
-            <column name="event" type="varchar(72)" />
-            <column name="template_id" type="varchar(36)" />
+            <column name="branch" type="varchar(512)" >
+                <constraints nullable="false"/>
+            </column> 
+            <column name="path" type="varchar(512)" >
+                <constraints nullable="false"/>
+            </column>
+            <column name="event" type="varchar(72)" >
+                <constraints nullable="false"/>
+            </column>
+            <column name="template_id" type="varchar(36)" >
+                <constraints nullable="false"/>
+            </column>
             <column name="priority" type="int" />
             <column name="webhook_id" type="varchar(36)" />
             <column name="created_date" type="datetime" />
