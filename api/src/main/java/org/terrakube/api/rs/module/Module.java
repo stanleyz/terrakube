@@ -23,6 +23,7 @@ import com.yahoo.elide.annotation.ReadPermission;
 import com.yahoo.elide.annotation.UpdatePermission;
 import com.yahoo.elide.core.RequestScope;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -31,6 +32,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Transient;
 import lombok.Getter;
@@ -77,8 +79,8 @@ public class Module extends GenericAuditFields {
     @ManyToOne
     private Organization organization;
 
-    @Exclude
-    private static final GitTagsCache gitTagsCache = new GitTagsCache();
+    // @Exclude
+    // private static final GitTagsCache gitTagsCache = new GitTagsCache();
 
     @Transient
     @ComputedAttribute
@@ -86,11 +88,11 @@ public class Module extends GenericAuditFields {
         return organization.getName() + "/" + name + "/" + provider;
     }
 
-    @Transient
-    @ComputedAttribute
-    public List<String> getVersions(RequestScope requestScope) {
-        return gitTagsCache.getVersions(getRegistryPath(requestScope), this.tagPrefix, this.source, this.vcs, this.ssh, this.gitHubAppToken);
-    }
+    // @Transient
+    // @ComputedAttribute
+    // public List<String> getVersions(RequestScope requestScope) {
+    //     return gitTagsCache.getVersions(getRegistryPath(requestScope), this.tagPrefix, this.source, this.vcs, this.ssh, this.gitHubAppToken);
+    // }
 
     @OneToOne
     private Vcs vcs;
@@ -98,8 +100,12 @@ public class Module extends GenericAuditFields {
     @OneToOne
     private Ssh ssh;
     
-    // This can go if the the logic in the above GitTagsCache is moved to serivce layer
-    @ManyToOne
-    @JoinColumn(name = "github_app_token_id")
-    private GitHubAppToken gitHubAppToken;
+    // // This can go if the the logic in the above GitTagsCache is moved to serivce layer
+    // @ManyToOne
+    // @JoinColumn(name = "github_app_token_id")
+    // private GitHubAppToken gitHubAppToken;
+    // 
+
+    @OneToMany(cascade = {CascadeType.REMOVE})
+    private List<ModuleVersion> versions;
 }
